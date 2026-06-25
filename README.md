@@ -42,10 +42,34 @@ collect ──► storage (SQLite time-series) ──► baseline (stats) ─┐
 | `monitor/config.py`     | Defaults + `config.yaml` deep-merge. |
 | `ui/dashboard.py`       | Live colour-coded terminal dashboard (`rich`). |
 | `ui/report.py`          | Text / HTML health reports. |
+| `web/sampler.py`        | Background thread: samples, stores, keeps latest state. |
+| `web/app.py`            | Flask app + JSON API. |
+| `web/templates`, `web/static` | Browser dashboard (HTML/CSS/JS). |
 | `main.py`               | CLI entry point. |
 
-The collectors and analysis are UI-agnostic, so a **web dashboard can be added
-later** by feeding the same snapshots to a different presenter.
+The collectors and analysis are UI-agnostic: the terminal dashboard, the HTML
+report, and the web dashboard all consume the **same snapshots**.
+
+## Web dashboard
+
+```bash
+python main.py web                      # http://127.0.0.1:8000
+python main.py web --host 0.0.0.0 --port 8080
+```
+
+A background thread samples metrics on the configured interval (writing
+history to SQLite and rebuilding the baseline periodically); the browser polls
+a small JSON API and renders:
+
+- live resource gauges (CPU, memory, disk, network) colour-coded by status,
+- a health score + overall status badge,
+- a **history line chart** (self-contained canvas — no external/CDN
+  dependency, works fully offline) with selectable metric and time range,
+- per-partition disk usage and top processes,
+- health checks, baseline **anomalies**, and recent **alerts**.
+
+JSON API: `/api/snapshot`, `/api/history?metric=&minutes=`, `/api/baseline`,
+`/api/alerts`, `/api/metrics`.
 
 ## Install
 
@@ -61,6 +85,9 @@ python main.py snapshot
 
 # Live colour-coded dashboard (Ctrl-C to quit)
 python main.py live
+
+# Browser dashboard with live charts
+python main.py web
 
 # Build history so the baseline becomes trustworthy
 python main.py collect            # forever (Ctrl-C to stop)
@@ -108,5 +135,5 @@ The suite uses synthetic snapshots so it runs deterministically anywhere.
 
 - Per-hour-of-day baselines (normal at 3am ≠ normal at 3pm).
 - EWMA / rolling baselines that age out stale history.
-- Web dashboard (FastAPI + charts) reusing the existing collectors.
 - Email / webhook alert delivery.
+- WebSocket push instead of polling for the web dashboard.

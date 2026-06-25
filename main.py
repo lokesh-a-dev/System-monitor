@@ -116,6 +116,19 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    from web.app import run as run_web
+
+    config = _load_config(args)
+    print(f"Starting web dashboard at http://{args.host}:{args.port}")
+    print("Sampling in the background; press Ctrl-C to stop.")
+    try:
+        run_web(config, host=args.host, port=args.port, debug=args.debug)
+    except KeyboardInterrupt:
+        print("\nStopped.")
+    return 0
+
+
 def cmd_live(args: argparse.Namespace) -> int:
     from rich.live import Live
 
@@ -161,6 +174,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("live", help="live terminal dashboard").set_defaults(
         func=cmd_live)
+
+    p_web = sub.add_parser("web", help="browser dashboard (Flask)")
+    p_web.add_argument("--host", default="127.0.0.1")
+    p_web.add_argument("--port", type=int, default=8000)
+    p_web.add_argument("--debug", action="store_true")
+    p_web.set_defaults(func=cmd_web)
 
     p_collect = sub.add_parser("collect", help="record metrics to history")
     p_collect.add_argument("--samples", type=int, default=0,

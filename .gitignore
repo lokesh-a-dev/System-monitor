@@ -10,5 +10,6 @@ venv/
 *.db
 monitor_history.db
 alerts.log
-*.html
 report.txt
+# Generated reports at the repo root (keep web templates under web/).
+/report.html

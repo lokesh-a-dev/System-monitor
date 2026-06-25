@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System Health Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">📊 System Health Monitor</div>
+    <div class="host">
+      <span id="hostname">—</span>
+      <span class="dim" id="osinfo"></span>
+      <span class="dim" id="uptime"></span>
+    </div>
+    <div class="score-box">
+      <div class="score" id="score">—</div>
+      <div class="status-badge" id="overall">—</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Resource gauges -->
+    <section class="grid">
+      <div class="card gauge" data-metric="cpu">
+        <h3>CPU</h3>
+        <div class="bar"><div class="fill" id="cpu-fill"></div></div>
+        <div class="value" id="cpu-val">—</div>
+        <div class="sub" id="cpu-sub"></div>
+      </div>
+      <div class="card gauge" data-metric="memory">
+        <h3>Memory</h3>
+        <div class="bar"><div class="fill" id="mem-fill"></div></div>
+        <div class="value" id="mem-val">—</div>
+        <div class="sub" id="mem-sub"></div>
+      </div>
+      <div class="card gauge" data-metric="disk">
+        <h3>Disk (busiest)</h3>
+        <div class="bar"><div class="fill" id="disk-fill"></div></div>
+        <div class="value" id="disk-val">—</div>
+        <div class="sub" id="disk-sub"></div>
+      </div>
+      <div class="card gauge" data-metric="net">
+        <h3>Network</h3>
+        <div class="value small" id="net-val">—</div>
+        <div class="sub" id="net-sub"></div>
+      </div>
+    </section>
+
+    <!-- History chart -->
+    <section class="card chart-card">
+      <div class="chart-head">
+        <h3>History</h3>
+        <select id="metric-select"></select>
+        <select id="range-select">
+          <option value="5">5 min</option>
+          <option value="10" selected>10 min</option>
+          <option value="30">30 min</option>
+          <option value="60">60 min</option>
+        </select>
+      </div>
+      <canvas id="history-chart" height="90"></canvas>
+    </section>
+
+    <div class="two-col">
+      <!-- Per-partition disk + top processes -->
+      <section class="card">
+        <h3>Disk partitions</h3>
+        <table id="disk-table"><tbody></tbody></table>
+        <h3 style="margin-top:1rem">Top processes</h3>
+        <table id="proc-table">
+          <thead><tr><th>PID</th><th>Name</th><th>CPU%</th><th>MEM%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Health checks, anomalies, alerts -->
+      <section class="card">
+        <h3>Health checks</h3>
+        <table id="checks-table"><tbody></tbody></table>
+        <h3 style="margin-top:1rem">Anomalies vs baseline</h3>
+        <div id="anomalies"><span class="dim">Loading…</span></div>
+        <h3 style="margin-top:1rem">Recent alerts</h3>
+        <div id="alerts"><span class="dim">None</span></div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <span class="dim">Refreshing every <span id="interval">2</span>s ·
+      baseline rebuilds periodically · <span id="conn-status">connecting…</span></span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
