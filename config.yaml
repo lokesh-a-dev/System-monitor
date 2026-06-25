@@ -1,0 +1,44 @@
+# System Health Monitor configuration.
+# Every value here overrides a built-in default (see monitor/config.py).
+# Delete or comment out a key to fall back to the default.
+
+# Seconds between samples in live/collect modes.
+interval: 2.0
+
+# SQLite database holding the metric history.
+database: monitor_history.db
+
+# Discard history older than this many days.
+retention_days: 7
+
+# Thresholds drive the HEALTHY / WARNING / CRITICAL status of each metric.
+thresholds:
+  cpu_percent:
+    warning: 70
+    critical: 90
+  memory_percent:
+    warning: 75
+    critical: 90
+  swap_percent:
+    warning: 50
+    critical: 80
+  disk_percent:
+    warning: 80
+    critical: 95
+  load_per_core:        # load average divided by core count
+    warning: 1.0
+    critical: 2.0
+  temperature:          # degrees Celsius (ignored if no sensor)
+    warning: 75
+    critical: 90
+
+# Statistical anomaly detection against the learned baseline.
+anomaly:
+  z_warning: 2.5        # |z-score| at which a reading is a warning anomaly
+  z_critical: 3.5       # |z-score| for a critical anomaly
+  min_samples: 30       # samples needed before a baseline is trusted
+
+# Alerting behaviour.
+alerts:
+  cooldown_seconds: 60  # suppress repeat alerts for a metric within this window
+  log_file: alerts.log
