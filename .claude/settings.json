@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/lokesh-25454/projects/system_monitor/System-monitor && git diff --quiet && git diff --cached --quiet || (git add -A && git commit -m 'Auto-commit: Claude changes' && git push) 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Pushing changes to GitHub..."
+          }
+        ]
+      }
+    ]
+  }
+}

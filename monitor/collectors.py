@@ -50,11 +50,22 @@ def collect_memory() -> Dict[str, Any]:
     }
 
 
+_VIRTUAL_FSTYPES = frozenset({
+    "squashfs", "tmpfs", "devtmpfs", "ramfs", "overlay",
+    "proc", "sysfs", "cgroup", "cgroup2", "pstore",
+    "tracefs", "debugfs", "hugetlbfs", "mqueue", "securityfs",
+})
+
+
 def collect_disk() -> Dict[str, Any]:
     """Per-partition usage plus aggregate read/write counters."""
     partitions: List[Dict[str, Any]] = []
     worst_percent = 0.0
     for part in psutil.disk_partitions(all=False):
+        # squashfs (snap packages) and other virtual FSes are always 100%
+        # full by design — skip them so they don't pollute the health metric.
+        if part.fstype in _VIRTUAL_FSTYPES:
+            continue
         try:
             usage = psutil.disk_usage(part.mountpoint)
         except (PermissionError, OSError):

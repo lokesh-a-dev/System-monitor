@@ -8,44 +8,65 @@
 </head>
 <body>
   <header id="topbar">
-    <div class="brand">📊 System Health Monitor</div>
+    <div class="brand">&#x1f4ca; System Health Monitor</div>
     <div class="host">
-      <span id="hostname">—</span>
+      <span id="hostname">&#x2014;</span>
       <span class="dim" id="osinfo"></span>
       <span class="dim" id="uptime"></span>
     </div>
+    <div class="host-extra dim" id="users-row"></div>
     <div class="score-box">
-      <div class="score" id="score">—</div>
-      <div class="status-badge" id="overall">—</div>
+      <div class="score" id="score">&#x2014;</div>
+      <div class="status-badge" id="overall">&#x2014;</div>
     </div>
   </header>
 
   <main>
-    <!-- Resource gauges -->
+    <!-- Top gauges -->
     <section class="grid">
+
+      <!-- CPU -->
       <div class="card gauge" data-metric="cpu">
         <h3>CPU</h3>
         <div class="bar"><div class="fill" id="cpu-fill"></div></div>
-        <div class="value" id="cpu-val">—</div>
+        <div class="value" id="cpu-val">&#x2014;</div>
         <div class="sub" id="cpu-sub"></div>
+        <div class="core-bars" id="core-bars"></div>
       </div>
+
+      <!-- Memory -->
       <div class="card gauge" data-metric="memory">
         <h3>Memory</h3>
         <div class="bar"><div class="fill" id="mem-fill"></div></div>
-        <div class="value" id="mem-val">—</div>
+        <div class="value" id="mem-val">&#x2014;</div>
         <div class="sub" id="mem-sub"></div>
+        <div class="swap-row" id="swap-row" style="display:none">
+          <span class="dim">Swap</span>
+          <div class="bar swap-bar"><div class="fill" id="swap-fill"></div></div>
+          <span id="swap-val" class="dim"></span>
+        </div>
       </div>
+
+      <!-- Disk -->
       <div class="card gauge" data-metric="disk">
-        <h3>Disk (busiest)</h3>
+        <h3>Disk</h3>
         <div class="bar"><div class="fill" id="disk-fill"></div></div>
-        <div class="value" id="disk-val">—</div>
+        <div class="value" id="disk-val">&#x2014;</div>
         <div class="sub" id="disk-sub"></div>
+        <div class="stat-row dim" id="disk-io"></div>
       </div>
+
+      <!-- Network -->
       <div class="card gauge" data-metric="net">
         <h3>Network</h3>
-        <div class="value small" id="net-val">—</div>
-        <div class="sub" id="net-sub"></div>
+        <div class="net-rates" id="net-rates">
+          <div class="net-rate-row"><span class="up-arrow">&#x2191;</span> <span id="net-up-rate">&#x2014;</span></div>
+          <div class="net-rate-row"><span class="down-arrow">&#x2193;</span> <span id="net-dn-rate">&#x2014;</span></div>
+        </div>
+        <div class="sub" id="net-totals"></div>
+        <div class="sub" id="net-conns"></div>
       </div>
+
     </section>
 
     <!-- History chart -->
@@ -63,33 +84,86 @@
       <canvas id="history-chart" height="90"></canvas>
     </section>
 
-    <div class="two-col">
-      <!-- Per-partition disk + top processes -->
+    <!-- Three detail columns -->
+    <div class="three-col">
+
+      <!-- Disk partitions -->
       <section class="card">
-        <h3>Disk partitions</h3>
-        <table id="disk-table"><tbody></tbody></table>
-        <h3 style="margin-top:1rem">Top processes</h3>
-        <table id="proc-table">
-          <thead><tr><th>PID</th><th>Name</th><th>CPU%</th><th>MEM%</th></tr></thead>
+        <h3>Disk Partitions</h3>
+        <table id="disk-table">
+          <thead><tr><th>Mount</th><th>FS</th><th class="num">Used%</th><th class="num">Free</th><th class="num">Total</th></tr></thead>
           <tbody></tbody>
         </table>
       </section>
 
-      <!-- Health checks, anomalies, alerts -->
+      <!-- Network interfaces -->
       <section class="card">
-        <h3>Health checks</h3>
-        <table id="checks-table"><tbody></tbody></table>
-        <h3 style="margin-top:1rem">Anomalies vs baseline</h3>
-        <div id="anomalies"><span class="dim">Loading…</span></div>
-        <h3 style="margin-top:1rem">Recent alerts</h3>
+        <h3>Network Interfaces</h3>
+        <table id="net-iface-table">
+          <thead><tr><th>Interface</th><th class="num">Sent</th><th class="num">Recv</th><th class="num">Errs</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="net-stats-extra" class="stat-block"></div>
+      </section>
+
+      <!-- Processes -->
+      <section class="card">
+        <h3>Top Processes</h3>
+        <div id="proc-status-row" class="stat-row dim"></div>
+        <div class="proc-tabs">
+          <button class="tab-btn active" id="tab-cpu" onclick="switchProcTab('cpu')">By CPU</button>
+          <button class="tab-btn" id="tab-mem" onclick="switchProcTab('mem')">By Memory</button>
+        </div>
+        <table id="proc-table">
+          <thead><tr><th>PID</th><th>Name</th><th class="num">CPU%</th><th class="num">MEM%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+    </div>
+
+    <!-- Bottom two columns -->
+    <div class="two-col">
+
+      <!-- System info + health checks -->
+      <section class="card">
+        <h3>System Info</h3>
+        <table id="sysinfo-table">
+          <tbody>
+            <tr><td class="dim">Hostname</td><td id="si-hostname">&#x2014;</td></tr>
+            <tr><td class="dim">OS</td><td id="si-os">&#x2014;</td></tr>
+            <tr><td class="dim">Platform</td><td id="si-platform">&#x2014;</td></tr>
+            <tr><td class="dim">Uptime</td><td id="si-uptime">&#x2014;</td></tr>
+            <tr><td class="dim">Boot time</td><td id="si-boot">&#x2014;</td></tr>
+            <tr><td class="dim">Users</td><td id="si-users">&#x2014;</td></tr>
+            <tr><td class="dim">CPU cores</td><td id="si-cores">&#x2014;</td></tr>
+            <tr><td class="dim">Frequency</td><td id="si-freq">&#x2014;</td></tr>
+            <tr><td class="dim">Temperature</td><td id="si-temp">&#x2014;</td></tr>
+          </tbody>
+        </table>
+
+        <h3 style="margin-top:1.2rem">Health Checks</h3>
+        <table id="checks-table">
+          <thead><tr><th>Status</th><th>Metric</th><th>Detail</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- Anomalies + alerts -->
+      <section class="card">
+        <h3>Anomalies vs Baseline</h3>
+        <div id="anomalies"><span class="dim">Loading&#x2026;</span></div>
+
+        <h3 style="margin-top:1.2rem">Recent Alerts</h3>
         <div id="alerts"><span class="dim">None</span></div>
       </section>
+
     </div>
   </main>
 
   <footer>
-    <span class="dim">Refreshing every <span id="interval">2</span>s ·
-      baseline rebuilds periodically · <span id="conn-status">connecting…</span></span>
+    <span class="dim">Refreshing every <span id="interval">2</span>s &middot;
+      baseline rebuilds periodically &middot; <span id="conn-status">connecting&hellip;</span></span>
   </footer>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>

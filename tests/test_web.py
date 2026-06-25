@@ -74,3 +74,70 @@ def test_history_known_metric_ok(client):
 def test_baseline_and_alerts_endpoints(client):
     assert client.get("/api/baseline").status_code == 200
     assert client.get("/api/alerts").status_code == 200
+
+
+def test_snapshot_has_network_interfaces(client):
+    data = client.get("/api/snapshot").get_json()
+    net = data["snapshot"]["network"]
+    assert "interfaces" in net
+    assert isinstance(net["interfaces"], dict)
+    assert "bytes_sent" in net
+    assert "bytes_recv" in net
+    assert "packets_sent" in net
+    assert "errin" in net
+    assert "errout" in net
+
+
+def test_snapshot_has_cpu_per_core(client):
+    data = client.get("/api/snapshot").get_json()
+    cpu = data["snapshot"]["cpu"]
+    assert "per_core" in cpu
+    assert isinstance(cpu["per_core"], list)
+
+
+def test_snapshot_has_memory_swap(client):
+    data = client.get("/api/snapshot").get_json()
+    mem = data["snapshot"]["memory"]
+    assert "swap_total" in mem
+    assert "swap_used" in mem
+    assert "swap_percent" in mem
+
+
+def test_snapshot_has_process_status_breakdown(client):
+    data = client.get("/api/snapshot").get_json()
+    procs = data["snapshot"]["processes"]
+    assert "statuses" in procs
+    for key in ("running", "sleeping", "zombie", "other"):
+        assert key in procs["statuses"]
+    assert "top_memory" in procs
+
+
+def test_snapshot_disk_no_squashfs(client):
+    data = client.get("/api/snapshot").get_json()
+    disk = data["snapshot"]["disk"]
+    for part in disk["partitions"]:
+        assert part["fstype"] != "squashfs", (
+            f"squashfs partition leaked into snapshot: {part['mountpoint']}"
+        )
+
+
+def test_snapshot_has_system_info(client):
+    data = client.get("/api/snapshot").get_json()
+    sys = data["snapshot"]["system"]
+    for field in ("hostname", "os", "platform", "boot_time", "uptime_seconds", "users"):
+        assert field in sys
+
+
+def test_history_minutes_param(client):
+    resp = client.get("/api/history?metric=cpu_percent&minutes=30")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["metric"] == "cpu_percent"
+    assert "points" in body
+
+
+def test_history_invalid_minutes_still_ok(client):
+    # Non-numeric minutes defaults gracefully.
+    resp = client.get("/api/history?metric=cpu_percent&minutes=notanumber")
+    # Flask coerces via type=float — falls back to default 10.
+    assert resp.status_code == 200
