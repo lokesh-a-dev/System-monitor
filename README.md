@@ -43,12 +43,103 @@ collect ──► storage (SQLite time-series) ──► baseline (stats) ─┐
 | `ui/dashboard.py`       | Live colour-coded terminal dashboard (`rich`). |
 | `ui/report.py`          | Text / HTML health reports. |
 | `web/sampler.py`        | Background thread: samples, stores, keeps latest state. |
-| `web/app.py`            | Flask app + JSON API. |
-| `web/templates`, `web/static` | Browser dashboard (HTML/CSS/JS). |
+| `web/app.py`            | Flask app + JSON API (local single-host dashboard). |
+| `web/templates`, `web/static` | Browser dashboard (HTML/CSS/JS), reused by the hub. |
+| `agent/agent.py`        | Push agent: collect locally, POST to the hub (stdlib only). |
+| `server/store.py`       | Host-aware SQLite store for many hosts. |
+| `server/app.py`         | Central hub: ingest + fleet overview + per-host detail. |
 | `main.py`               | CLI entry point. |
 
 The collectors and analysis are UI-agnostic: the terminal dashboard, the HTML
-report, and the web dashboard all consume the **same snapshots**.
+report, the local web dashboard, **and the remote fleet hub** all consume the
+**same snapshots** and reuse the **same** health/baseline logic.
+
+## Monitoring remote servers (EC2 / cloud) from anywhere
+
+For watching cloud servers, the tool uses an **agent → central hub** push model
+(like Datadog/Grafana Cloud):
+
+```
+EC2 #1 ─┐  agent: collect locally + POST (outbound HTTPS, API-key auth)
+EC2 #2 ─┼───────────────────────────────────────────────►  HUB (central collector)
+EC2 #N ─┘                                                    ├─ stores per-host history
+                                                             └─ fleet dashboard (view anywhere)
+```
+
+Why push (not pull): agents make **outbound** connections only, so they work
+behind NAT/firewalls/security-groups with **no inbound ports** opened on the
+monitored servers. It scales to a fleet and you get one dashboard for all hosts.
+
+### 1. Generate a shared API key
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+### 2. Run the hub (on a box reachable by the agents)
+
+```bash
+export MONITOR_API_KEY="<the key>"
+python main.py hub --port 8000 --db hub.db
+# fleet overview at http://<hub-host>:8000/
+```
+
+### 3. Run an agent on each server you want to monitor
+
+```bash
+export MONITOR_API_KEY="<the same key>"
+python main.py agent --server https://your-hub.example.com --label web-1
+# --interval N   seconds between pushes (default: config value)
+# --insecure     skip TLS verification (self-signed certs only)
+```
+
+The agent depends only on `psutil` + the Python standard library — no Flask,
+rich, or extra packages needed on the monitored servers.
+
+### Securing the hub (important)
+
+The built-in Flask server is for development. For a public hub:
+
+- **Put it behind a reverse proxy with HTTPS** (Caddy or nginx) so the API key
+  and metrics travel encrypted. Example Caddyfile:
+  ```
+  monitor.example.com {
+      reverse_proxy 127.0.0.1:8000
+  }
+  ```
+- Run the app under a production WSGI server, e.g.
+  `gunicorn "server.app:create_app(...)"` (or keep it bound to localhost and
+  let Caddy terminate TLS).
+- Keep the **API key secret** and rotate it if leaked. Treat the ingest
+  endpoint as authenticated-only.
+- Open only the hub's port (in the EC2 security group); agents need **no**
+  inbound rules.
+
+### Run agents as a service (systemd)
+
+```ini
+# /etc/systemd/system/sysmon-agent.service
+[Unit]
+Description=System Health Monitor agent
+After=network-online.target
+
+[Service]
+Environment=MONITOR_API_KEY=your-key-here
+ExecStart=/usr/bin/python3 /opt/system-monitor/main.py agent \
+    --server https://monitor.example.com --label %H
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl enable --now sysmon-agent
+```
+
+Hub endpoints: `POST /api/ingest` (auth), `GET /api/hosts`,
+`/api/snapshot?host=`, `/api/history?host=&metric=&minutes=`,
+`/api/baseline?host=`, `/api/metrics`.
 
 ## Web dashboard
 
@@ -86,8 +177,12 @@ python main.py snapshot
 # Live colour-coded dashboard (Ctrl-C to quit)
 python main.py live
 
-# Browser dashboard with live charts
+# Browser dashboard with live charts (this machine)
 python main.py web
+
+# Central hub for many remote servers (see "Monitoring remote servers")
+python main.py hub
+python main.py agent --server https://your-hub --label web-1
 
 # Build history so the baseline becomes trustworthy
 python main.py collect            # forever (Ctrl-C to stop)
@@ -135,5 +230,7 @@ The suite uses synthetic snapshots so it runs deterministically anywhere.
 
 - Per-hour-of-day baselines (normal at 3am ≠ normal at 3pm).
 - EWMA / rolling baselines that age out stale history.
-- Email / webhook alert delivery.
-- WebSocket push instead of polling for the web dashboard.
+- Email / webhook alert delivery (and a per-host alert log on the hub).
+- WebSocket push instead of polling for the dashboards.
+- Agent-side buffering so metrics survive a hub outage.
+- Per-host config / thresholds and grouping/tagging in the fleet view.

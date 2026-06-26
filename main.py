@@ -4,6 +4,9 @@
 Subcommands
 -----------
   live      Live colour-coded terminal dashboard.
+  web       Local browser dashboard (this machine).
+  hub       Central collector dashboard for many remote hosts.
+  agent     Push this machine's metrics to a hub (run on each server).
   collect   Sample metrics into the database (build history / baseline).
   baseline  Print the learned statistical baseline.
   report    Generate a health report (text or HTML).
@@ -129,6 +132,49 @@ def cmd_web(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_api_key(args: argparse.Namespace) -> str:
+    import os
+    key = args.api_key or os.environ.get("MONITOR_API_KEY", "")
+    if not key:
+        print("ERROR: an API key is required. Pass --api-key or set the "
+              "MONITOR_API_KEY environment variable.", file=sys.stderr)
+        print("Generate one with: python -c \"import secrets; "
+              "print(secrets.token_urlsafe(32))\"", file=sys.stderr)
+        sys.exit(2)
+    return key
+
+
+def cmd_hub(args: argparse.Namespace) -> int:
+    from server.app import run as run_hub
+
+    config = _load_config(args)
+    api_key = _resolve_api_key(args)
+    db = args.db or "hub.db"
+    print(f"Starting collector hub on http://{args.host}:{args.port}")
+    print(f"  database   : {db}")
+    print(f"  ingest at  : POST /api/ingest  (X-API-Key required)")
+    print(f"  host stale after {args.stale_after:.0f}s without data")
+    print("Press Ctrl-C to stop.")
+    try:
+        run_hub(config, api_key=api_key, db_path=db, host=args.host,
+                port=args.port, stale_after=args.stale_after,
+                debug=args.debug)
+    except KeyboardInterrupt:
+        print("\nStopped.")
+    return 0
+
+
+def cmd_agent(args: argparse.Namespace) -> int:
+    from agent.agent import run as run_agent
+
+    api_key = _resolve_api_key(args)
+    interval = args.interval if args.interval is not None \
+        else _load_config(args)["interval"]
+    run_agent(server=args.server, api_key=api_key, label=args.label,
+              interval=interval, insecure=args.insecure)
+    return 0
+
+
 def cmd_live(args: argparse.Namespace) -> int:
     from rich.live import Live
 
@@ -180,6 +226,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_web.add_argument("--port", type=int, default=8000)
     p_web.add_argument("--debug", action="store_true")
     p_web.set_defaults(func=cmd_web)
+
+    # Central collector hub (receives pushed metrics from agents).
+    p_hub = sub.add_parser("hub", help="central collector for many hosts")
+    p_hub.add_argument("--host", default="0.0.0.0",
+                       help="bind address (default: 0.0.0.0)")
+    p_hub.add_argument("--port", type=int, default=8000)
+    p_hub.add_argument("--db", help="hub database file (default: hub.db)")
+    p_hub.add_argument("--api-key", help="ingest API key "
+                       "(or set MONITOR_API_KEY)")
+    p_hub.add_argument("--stale-after", type=float, default=45.0,
+                       help="seconds without data before a host is offline")
+    p_hub.add_argument("--debug", action="store_true")
+    p_hub.set_defaults(func=cmd_hub)
+
+    # Push agent (runs on each monitored server).
+    p_agent = sub.add_parser("agent", help="push local metrics to a hub")
+    p_agent.add_argument("--server", required=True,
+                         help="hub base URL, e.g. https://monitor.example.com")
+    p_agent.add_argument("--api-key", help="ingest API key "
+                         "(or set MONITOR_API_KEY)")
+    p_agent.add_argument("--label", help="host label (default: hostname)")
+    p_agent.add_argument("--interval", type=float,
+                         help="seconds between pushes (default: config value)")
+    p_agent.add_argument("--insecure", action="store_true",
+                         help="skip TLS certificate verification")
+    p_agent.set_defaults(func=cmd_agent)
 
     p_collect = sub.add_parser("collect", help="record metrics to history")
     p_collect.add_argument("--samples", type=int, default=0,

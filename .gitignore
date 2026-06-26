@@ -8,7 +8,10 @@ venv/
 
 # Monitor runtime artifacts
 *.db
+*.db-wal
+*.db-shm
 monitor_history.db
+hub.db
 alerts.log
 report.txt
 # Generated reports at the repo root (keep web templates under web/).

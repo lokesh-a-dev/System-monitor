@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -221,3 +222,115 @@ def test_collect_all_has_expected_shape():
         assert key in snap
     assert isinstance(snap["cpu"]["percent"], (int, float))
     assert snap["memory"]["total"] > 0
+
+
+def test_collect_disk_excludes_squashfs():
+    """squashfs (snap) partitions must not inflate max_percent."""
+    real_part = MagicMock()
+    real_part.fstype = "ext4"
+    real_part.mountpoint = "/"
+
+    snap_part = MagicMock()
+    snap_part.fstype = "squashfs"
+    snap_part.mountpoint = "/snap/foo/1"
+
+    real_usage = MagicMock()
+    real_usage.total = 100
+    real_usage.used = 40
+    real_usage.free = 60
+    real_usage.percent = 40.0
+
+    def fake_usage(mountpoint):
+        if mountpoint == "/":
+            return real_usage
+        raise AssertionError(f"should not read squashfs mountpoint: {mountpoint}")
+
+    with patch("psutil.disk_partitions", return_value=[real_part, snap_part]), \
+         patch("psutil.disk_usage", side_effect=fake_usage), \
+         patch("psutil.disk_io_counters", return_value=MagicMock(read_bytes=0, write_bytes=0)):
+        result = collectors.collect_disk()
+
+    assert result["max_percent"] == pytest.approx(40.0)
+    assert len(result["partitions"]) == 1
+    assert result["partitions"][0]["fstype"] == "ext4"
+
+
+def test_collect_disk_excludes_all_virtual_fstypes():
+    """All virtual fs types in _VIRTUAL_FSTYPES are skipped."""
+    for fstype in ("squashfs", "tmpfs", "devtmpfs", "overlay", "proc", "sysfs"):
+        part = MagicMock()
+        part.fstype = fstype
+        part.mountpoint = f"/fake/{fstype}"
+
+        with patch("psutil.disk_partitions", return_value=[part]), \
+             patch("psutil.disk_io_counters", return_value=MagicMock(read_bytes=0, write_bytes=0)):
+            result = collectors.collect_disk()
+
+        assert result["partitions"] == [], f"{fstype} should be filtered out"
+        assert result["max_percent"] == 0.0
+
+
+def test_collect_network_has_interfaces():
+    """collect_network returns per-interface stats."""
+    collectors.prime()
+    net = collectors.collect_network()
+    assert "interfaces" in net
+    assert isinstance(net["interfaces"], dict)
+    assert "bytes_sent" in net
+    assert "bytes_recv" in net
+    assert "packets_sent" in net
+    assert "packets_recv" in net
+    assert "errin" in net
+    assert "errout" in net
+
+
+def test_collect_network_interface_fields():
+    """Each interface entry has the expected counter fields."""
+    collectors.prime()
+    net = collectors.collect_network()
+    for name, iface in net["interfaces"].items():
+        for field in ("bytes_sent", "bytes_recv", "packets_sent", "packets_recv",
+                      "errin", "errout", "dropin", "dropout"):
+            assert field in iface, f"interface {name!r} missing {field!r}"
+
+
+def test_collect_processes_status_breakdown():
+    """collect_processes returns running/sleeping/zombie/other counts."""
+    collectors.prime()
+    procs = collectors.collect_processes()
+    assert "statuses" in procs
+    for key in ("running", "sleeping", "zombie", "other"):
+        assert key in procs["statuses"]
+    assert "top_cpu" in procs
+    assert "top_memory" in procs
+
+
+def test_collect_cpu_per_core():
+    """CPU snapshot includes per-core list."""
+    collectors.prime()
+    cpu = collectors.collect_cpu()
+    assert "per_core" in cpu
+    assert isinstance(cpu["per_core"], list)
+    assert len(cpu["per_core"]) == cpu["core_count"]
+
+
+def test_disk_real_partition_not_filtered():
+    """Real partition types like btrfs/ext4/vfat pass through the filter."""
+    for fstype in ("ext4", "btrfs", "xfs", "vfat", "ntfs", "zfs"):
+        part = MagicMock()
+        part.fstype = fstype
+        part.mountpoint = "/"
+
+        usage = MagicMock()
+        usage.total = 100
+        usage.used = 50
+        usage.free = 50
+        usage.percent = 50.0
+
+        with patch("psutil.disk_partitions", return_value=[part]), \
+             patch("psutil.disk_usage", return_value=usage), \
+             patch("psutil.disk_io_counters", return_value=MagicMock(read_bytes=0, write_bytes=0)):
+            result = collectors.collect_disk()
+
+        assert len(result["partitions"]) == 1, f"{fstype} should NOT be filtered"
+        assert result["max_percent"] == pytest.approx(50.0)
