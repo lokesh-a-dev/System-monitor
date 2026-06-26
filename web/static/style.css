@@ -246,3 +246,54 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- footer --------------------------------------------------------------- */
 
 footer { padding: 0.8rem 1.2rem; text-align: center; font-size: 0.8rem; }
+
+/* ---- fleet overview ------------------------------------------------------- */
+
+.back-link {
+  color: var(--blue);
+  text-decoration: none;
+  font-size: 0.85rem;
+  margin-right: 0.6rem;
+  font-weight: 600;
+}
+.back-link:hover { text-decoration: underline; }
+
+.host-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.host-card {
+  display: block;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.15s, transform 0.1s;
+}
+.host-card:hover { border-color: var(--blue); transform: translateY(-2px); }
+.host-card.is-offline { opacity: 0.6; }
+
+.card-head { display: flex; align-items: center; gap: 0.5rem; }
+.card-name { font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-score { font-size: 1.6rem; font-weight: 800; margin: 0.3rem 0 0.6rem; }
+.card-meta, .card-foot { font-size: 0.78rem; margin-top: 0.5rem; }
+
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; background: var(--dim); }
+.dot.status-HEALTHY { background: var(--green); }
+.dot.status-WARNING { background: var(--yellow); }
+.dot.status-CRITICAL { background: var(--red); }
+.dot.offline { background: var(--dim); }
+
+.status-OFFLINE { background: rgba(139,151,166,0.18); color: var(--dim); }
+
+.mini { display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0; font-size: 0.78rem; }
+.mini-label { width: 34px; color: var(--dim); }
+.mini-track { flex: 1; height: 8px; background: var(--card-2); border-radius: 4px; overflow: hidden; }
+.mini-fill { height: 100%; background: var(--green); }
+.mini-fill.warning { background: var(--yellow); }
+.mini-fill.critical { background: var(--red); }
+.mini-val { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }

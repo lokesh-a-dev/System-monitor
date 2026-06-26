@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>System Health Monitor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>window.MONITOR_HOST = "{{ monitor_host|default('') }}";</script>
 </head>
 <body>
   <header id="topbar">
-    <div class="brand">&#x1f4ca; System Health Monitor</div>
+    <div class="brand">
+      {% if monitor_host %}<a href="/" class="back-link">&#x2190; Fleet</a>{% endif %}
+      &#x1f4ca; System Health Monitor</div>
     <div class="host">
       <span id="hostname">&#x2014;</span>
       <span class="dim" id="osinfo"></span>

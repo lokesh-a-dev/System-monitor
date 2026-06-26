@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fleet &middot; System Health Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">&#x1f5fa; System Health Monitor &mdash; Fleet</div>
+    <div class="host-extra dim" id="fleet-summary">&#x2014;</div>
+    <div class="score-box">
+      <div class="status-badge" id="fleet-status">&#x2014;</div>
+    </div>
+  </header>
+
+  <main>
+    <section id="host-grid" class="host-grid">
+      <div class="dim" style="padding:2rem">Waiting for agents to report&hellip;</div>
+    </section>
+  </main>
+
+  <footer>
+    <span class="dim">Click a host for full detail &middot;
+      refreshing every 3s &middot; <span id="conn-status">connecting&hellip;</span></span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='fleet.js') }}"></script>
+</body>
+</html>

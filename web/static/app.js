@@ -3,6 +3,14 @@
 const REFRESH_MS = 2000;
 let lastHistory = { metric: "cpu_percent", points: [] };
 
+// When served by the central hub, window.MONITOR_HOST names which remote host
+// to view; on the local dashboard it is empty and api() is a no-op.
+const HOST = (window.MONITOR_HOST || "").trim();
+function api(path) {
+  if (!HOST) return path;
+  return path + (path.includes("?") ? "&" : "?") + "host=" + encodeURIComponent(HOST);
+}
+
 // Tracks previous network counters for rate calculation.
 let prevNet = null;
 let prevNetTime = null;
@@ -67,7 +75,7 @@ window.switchProcTab = function(tab) {
 async function refreshSnapshot() {
   let data;
   try {
-    data = await (await fetch("/api/snapshot")).json();
+    data = await (await fetch(api("/api/snapshot"))).json();
     document.getElementById("conn-status").textContent = "live";
   } catch (e) {
     document.getElementById("conn-status").textContent = "disconnected";
@@ -274,7 +282,7 @@ function renderAnomalies(anoms) {
 
 async function refreshAlerts() {
   try {
-    const alerts = await (await fetch("/api/alerts")).json();
+    const alerts = await (await fetch(api("/api/alerts"))).json();
     const box = document.getElementById("alerts");
     if (!alerts.length) { box.innerHTML = '<span class="dim">None</span>'; return; }
     box.innerHTML = alerts.slice(0, 10).map(a => {
@@ -288,7 +296,7 @@ async function refreshAlerts() {
 // ---- history chart ---------------------------------------------------------
 
 async function setupMetricSelect() {
-  const metrics = await (await fetch("/api/metrics")).json();
+  const metrics = await (await fetch(api("/api/metrics"))).json();
   const sel = document.getElementById("metric-select");
   sel.innerHTML = metrics.map(m => `<option value="${m}">${m}</option>`).join("");
   sel.addEventListener("change", refreshChart);
@@ -299,7 +307,7 @@ async function refreshChart() {
   const metric = document.getElementById("metric-select").value;
   const minutes = document.getElementById("range-select").value;
   try {
-    lastHistory = await (await fetch(`/api/history?metric=${metric}&minutes=${minutes}`)).json();
+    lastHistory = await (await fetch(api(`/api/history?metric=${metric}&minutes=${minutes}`))).json();
   } catch (e) { return; }
   drawChart();
 }
