@@ -9,12 +9,6 @@ frequency, temperature), memory & swap, disk (per-partition usage + I/O),
 network (throughput, errors, connections), processes (top consumers, states),
 and system info (uptime, users, OS).
 
-> 📈 **Also in this repo:** a separate **Stock Intrinsic Value & Fair Price
-> tool** (DCF + multiples + dividend + Graham, with a Streamlit dashboard and
-> margin-of-safety entry signals for US & Indian stocks). See
-> [`valuation/README.md`](valuation/README.md) — run `python -m valuation` or
-> `streamlit run dashboard.py`.
-
 ---
 
 ## Why this exists
