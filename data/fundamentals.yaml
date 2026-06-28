@@ -1,0 +1,130 @@
+# Offline fundamentals snapshot for the valuation tool.
+#
+# Used by the SnapshotProvider so the tool runs with no network access. These
+# are APPROXIMATE point-in-time figures (~June 2026) compiled from public
+# sources for demonstration — refresh with live mode (--live) for decisions.
+#
+# Units: monetary values are absolute, in each stock's reporting currency
+#   (free_cash_flow / net_cash are full amounts, not millions/billions).
+#   growth_rate, fcf_growth_5y are decimals (0.12 = 12%).
+stocks:
+  MSFT:
+    name: Microsoft Corporation
+    currency: USD
+    region: US
+    price: 365.46
+    shares_outstanding: 7.43e9
+    free_cash_flow: 72.9e9
+    net_cash: 49.0e9          # ~$94B cash - ~$45B debt
+    eps: 13.60
+    book_value_per_share: 41.7
+    dividend_per_share: 3.32
+    beta: 0.90
+    growth_rate: 0.12
+    fcf_growth_5y: 0.13
+    pe_ratio: 26.9
+    week52_high: 500.0
+    week52_low: 345.0
+    as_of: "2026-06-25"
+    source: snapshot
+
+  META:
+    name: Meta Platforms, Inc.
+    currency: USD
+    region: US
+    price: 557.67
+    shares_outstanding: 2.54e9
+    free_cash_flow: 48.25e9
+    net_cash: -5.59e9         # ~$81B cash - ~$87B debt (slight net debt)
+    eps: 26.00
+    book_value_per_share: 78.7
+    dividend_per_share: 2.10
+    beta: 1.23
+    growth_rate: 0.16
+    fcf_growth_5y: 0.15
+    pe_ratio: 21.4
+    week52_high: 760.0
+    week52_low: 480.0
+    as_of: "2026-06-24"
+    source: snapshot
+
+  GOOGL:
+    name: Alphabet Inc.
+    currency: USD
+    region: US
+    price: 337.39
+    shares_outstanding: 12.20e9
+    free_cash_flow: 64.43e9
+    net_cash: 30.96e9         # ~$127B cash - ~$96B debt
+    eps: 9.20
+    book_value_per_share: 30.3
+    dividend_per_share: 0.84
+    beta: 1.02
+    growth_rate: 0.14
+    fcf_growth_5y: 0.16
+    pe_ratio: 36.7
+    week52_high: 350.0
+    week52_low: 210.0
+    as_of: "2026-06-27"
+    source: snapshot
+
+  NVDA:
+    name: NVIDIA Corporation
+    currency: USD
+    region: US
+    price: 192.53
+    shares_outstanding: 24.22e9
+    free_cash_flow: 46.34e9
+    net_cash: 43.0e9          # ~$53B cash - ~$10B debt
+    eps: 6.53
+    book_value_per_share: 3.70
+    dividend_per_share: 0.04
+    beta: 1.70
+    growth_rate: 0.28
+    fcf_growth_5y: 0.40
+    pe_ratio: 29.48
+    week52_high: 210.0
+    week52_low: 95.0
+    as_of: "2026-06-26"
+    source: snapshot
+
+  # --- Indian examples (NSE). Figures are rough estimates; verify with --live. ---
+  RELIANCE.NS:
+    name: Reliance Industries Ltd
+    currency: INR
+    region: IN
+    price: 1318.10
+    shares_outstanding: 1.353e10   # ~1,353 crore shares
+    free_cash_flow: 4.0e11         # ~Rs 40,000 cr (heavy capex)
+    net_cash: -1.10e12             # net debt ~Rs 1.1 lakh cr
+    eps: 32.40
+    book_value_per_share: 591.0
+    dividend_per_share: 10.0
+    beta: 1.00
+    growth_rate: 0.10
+    fcf_growth_5y: 0.08
+    pe_ratio: 40.69
+    week52_high: 1550.0
+    week52_low: 1115.0
+    as_of: "2026-06-26"
+    source: snapshot
+
+  TCS.NS:
+    name: Tata Consultancy Services Ltd
+    currency: INR
+    region: IN
+    price: 3450.0                  # approximate; Reliance-style figure varies by source
+    shares_outstanding: 3.62e9     # ~362 crore shares
+    free_cash_flow: 4.2e11         # ~Rs 42,000 cr
+    net_cash: 7.0e11               # debt-free, cash rich (~Rs 70,000 cr)
+    eps: 138.0
+    book_value_per_share: 280.0
+    dividend_per_share: 126.0
+    beta: 0.70
+    growth_rate: 0.09
+    fcf_growth_5y: 0.10
+    pe_ratio: 25.0
+    week52_high: 4250.0
+    week52_low: 3050.0
+    as_of: "2026-06-28"
+    source: snapshot

@@ -3,5 +3,10 @@ rich>=13.0
 PyYAML>=6.0
 Flask>=3.0
 
+# Stock valuation tool (see valuation/ and dashboard.py):
+yfinance>=0.2.40   # live fundamentals; optional — offline snapshot works without it
+pandas>=2.0        # dashboard tables/charts
+streamlit>=1.30    # interactive valuation dashboard
+
 # Development / testing only:
 pytest>=7.0

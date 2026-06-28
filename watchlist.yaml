@@ -1,0 +1,44 @@
+# Stock valuation watchlist & assumptions.
+# Edit freely — every value overrides a built-in default (see valuation/config.py).
+# Indian stocks: use Yahoo suffixes (.NS for NSE, .BO for BSE), e.g. RELIANCE.NS.
+
+watchlist:
+  - MSFT
+  - META
+  - GOOGL
+  - NVDA
+  - RELIANCE.NS
+  - TCS.NS
+
+# Margin of safety you want before buying (0.25 = buy 25% below fair value).
+target_margin_of_safety: 0.25
+
+# DCF projection horizon (years).
+projection_years: 10
+
+# How the four models are blended into one intrinsic value. Models lacking
+# data (e.g. dividend for a non-payer) are dropped and weights re-normalised.
+model_weights:
+  dcf: 0.50
+  multiples: 0.25
+  dividend: 0.15
+  graham: 0.10
+
+# Market assumptions per region. CAPM: r = risk_free + beta * equity_premium.
+regions:
+  US:
+    risk_free: 0.043
+    equity_premium: 0.05
+    terminal_growth: 0.025
+  IN:
+    risk_free: 0.068
+    equity_premium: 0.055
+    terminal_growth: 0.045
+
+# Optional per-ticker assumption overrides. Example:
+# overrides:
+#   NVDA:
+#     growth_stage1: 0.25      # temper the stage-1 growth assumption
+#   RELIANCE.NS:
+#     discount_rate: 0.13
+overrides: {}
