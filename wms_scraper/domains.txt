@@ -1,0 +1,26 @@
+# One domain per line. Blank lines, '#' comments and a 'Domains' header are ignored.
+# The data center (de= param) is derived automatically from each domain's
+# leading label, e.g. us4-swss-accl.zoho.com -> de=US4.
+Domains
+us4-swss-accl.zoho.com
+us3-swss-accl.zoho.com
+us4-swss.zoho.com
+us3-swss.zoho.com
+in2-swss.zoho.in
+in1-swss.zoho.in
+eu1-swss.zoho.eu
+eu2-swss.zoho.eu
+au2-swss.zoho.com.au
+au1-swss.zoho.com.au
+jp1-swss.zoho.jp
+jp2-swss.zoho.jp
+cn2-swss.zoho.com.cn
+cn3-swss.zoho.com.cn
+ca1-swss.zohocloud.ca
+ca2-swss.zohocloud.ca
+sa1-swss.zoho.sa
+sa2-swss.zoho.sa
+uae1-swss.zoho.ae
+uae2-swss.zoho.ae
+uk1-swss.zoho.uk
+uk2-swss.zoho.uk
