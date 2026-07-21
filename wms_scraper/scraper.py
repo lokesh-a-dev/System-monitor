@@ -33,35 +33,51 @@ BASE_URL = "https://zohodcm.com/zservice/wms"
 # JS run in the page to find one domain's IPs without depending on markup.
 # Starts at the text node containing the domain and climbs to the smallest
 # ancestor whose text also contains an IPv4 address (that domain's row).
-# Harvest a full {domain: [ip, ...]} map for the currently-rendered DC table.
+# Harvest a {domain: {ips: [...], count: N}} map for the rendered DC table.
 #
-# The WMS public-IP cells look like:
-#   <div class="grid-content ..." data-divid="publicDomainsTableTable">
-#     <span>136.143.180.151 - TCP/80 -> 80
+# The WMS public-IP column is a flat sequence of one cell per IP line:
+#   <div class="grid-content" data-divid="publicDomainsTableTable">
+#     <span>136.143.180.151 - TCP/80 -> 80</span></div>
+#   <div class="grid-content" data-divid="publicDomainsTableTable">
+#     <span>136.143.185.151 - TCP/80 -> 80
 #       <span class="info-icon"
-#             onclick="showAllPublicIpDetailsForDomain('us3-swss.zoho.com',1)">
-#       </span>
-#     </span>
-#   </div>
-# The exact domain lives in the info-icon's onclick, so we key off that (no
-# fuzzy text matching) and pull the IP from the enclosing cell's text. A domain
-# with multiple public IPs simply has multiple such cells, all carrying the
-# same domain in their onclick — they accumulate into the list.
+#             onclick="showAllPublicIpDetailsForDomain('us3-swss.zoho.com',2)">
+#       </span></span></div>
+# A domain with several public IPs spans several consecutive cells, but ONLY the
+# last cell carries the info-icon that names the domain. So we walk the cells in
+# order, accumulating IPs, and flush the accumulated block to the domain each
+# time we hit an info-icon. The onclick's 2nd argument is the domain's public-IP
+# count, kept as `count` so the caller can detect an under-capture.
 _HARVEST_JS = r"""
 () => {
   const ipRe = /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/g;
-  const domRe = /showAllPublicIpDetailsForDomain\(\s*['"]([^'"]+)['"]/;
+  const domRe = /showAllPublicIpDetailsForDomain\(\s*['"]([^'"]+)['"]\s*(?:,\s*(\d+))?/;
   const map = {};
-  const icons = document.querySelectorAll('[onclick*="showAllPublicIpDetailsForDomain"]');
-  icons.forEach((icon) => {
-    const m = domRe.exec(icon.getAttribute('onclick') || '');
-    if (!m) return;
-    const domain = m[1].trim().toLowerCase();
-    if (!(domain in map)) map[domain] = [];
-    const cell = icon.closest('div') || icon.parentElement;
-    const text = cell ? cell.textContent : '';
-    const ips = text.match(ipRe) || [];
-    for (const ip of ips) if (!map[domain].includes(ip)) map[domain].push(ip);
+  const cells = document.querySelectorAll('div[data-divid="publicDomainsTableTable"]');
+  let pending = [];
+  cells.forEach((cell) => {
+    const found = cell.textContent.match(ipRe) || [];
+    for (const ip of found) pending.push(ip);
+    let icon = cell.querySelector('[onclick*="showAllPublicIpDetailsForDomain"]');
+    const selfOc = cell.getAttribute && (cell.getAttribute('onclick') || '');
+    if (!icon && selfOc && selfOc.indexOf('showAllPublicIpDetailsForDomain') !== -1) {
+      icon = cell;
+    }
+    if (icon) {
+      const m = domRe.exec(icon.getAttribute('onclick') || '');
+      if (m) {
+        const domain = m[1].trim().toLowerCase();
+        const count = m[2] ? parseInt(m[2], 10) : null;
+        if (!(domain in map)) map[domain] = { ips: [], count: count };
+        if (count != null) {
+          map[domain].count = Math.max(map[domain].count || 0, count);
+        }
+        for (const ip of pending) {
+          if (!map[domain].ips.includes(ip)) map[domain].ips.push(ip);
+        }
+      }
+      pending = [];  // start a fresh block for the next domain
+    }
   });
   return map;
 }
@@ -139,25 +155,32 @@ def _wait_for_domains_table(page, timeout_ms: int) -> None:
 
 
 def _harvest_dc(page, table_timeout_ms: int):
-    """Return a ``{domain: [ip, ...]}`` map for the current DC's table.
+    """Harvest the current DC's table.
+
+    Returns ``(ips, counts)`` where ``ips`` is ``{domain: [ip, ...]}`` and
+    ``counts`` is ``{domain: expected_public_ip_count}`` (from the onclick).
 
     Scrolls the grid incrementally from top to bottom, harvesting at each step,
     so a virtualised grid (which only keeps visible rows in the DOM) renders
-    every row's window in turn and no middle rows are skipped. Accumulates into
-    ``best`` so rows recycled out of the DOM after being seen are kept.
+    every row's window in turn and no middle rows are skipped. Accumulates so
+    rows recycled out of the DOM after being seen are kept.
     """
     _wait_for_domains_table(page, timeout_ms=table_timeout_ms)
     page.wait_for_timeout(400)  # let the initial rows settle
 
-    best = {}
+    ips = {}
+    counts = {}
 
     def _absorb():
         current = page.evaluate(_HARVEST_JS) or {}
-        for domain, ips in current.items():
-            slot = best.setdefault(domain, [])
-            for ip in ips:
+        for domain, info in current.items():
+            slot = ips.setdefault(domain, [])
+            for ip in info.get("ips", []):
                 if ip not in slot:
                     slot.append(ip)
+            count = info.get("count")
+            if count is not None:
+                counts[domain] = max(counts.get(domain, 0), count)
 
     # Harvest what's visible at the top, then walk the list in a *bounded*
     # number of page-sized steps (one screenful of overlap each) so a
@@ -172,7 +195,7 @@ def _harvest_dc(page, table_timeout_ms: int):
         page.evaluate(_SCROLL_TO_JS, i / steps)
         page.wait_for_timeout(300)
         _absorb()
-    return best
+    return ips, counts
 
 
 def _wait_for_app_shell(page, timeout_ms: int) -> None:
@@ -284,7 +307,7 @@ def scrape(domains, profile_dir, headless=False, login_timeout_s=300,
                 _log(f"[{dc}] loading {len(dc_domains)} domain(s)…")
                 try:
                     _load_dc(page, dc)
-                    dc_map = _harvest_dc(page, table_timeout_ms=table_timeout_s * 1000)
+                    dc_map, dc_counts = _harvest_dc(page, table_timeout_ms=table_timeout_s * 1000)
                 except Exception as exc:
                     for d in dc_domains:
                         results.append(DomainResult(d, dc, error=f"table load failed: {exc}"))
@@ -295,7 +318,9 @@ def scrape(domains, profile_dir, headless=False, login_timeout_s=300,
                     found_path = os.path.join(debug_dir, f"{dc}-found.txt")
                     with open(found_path, "w", encoding="utf-8") as fh:
                         for d in sorted(dc_map):
-                            fh.write(f"{d}\t{'; '.join(dc_map[d])}\n")
+                            expected = dc_counts.get(d)
+                            note = f"\t(expected {expected})" if expected and expected != len(dc_map[d]) else ""
+                            fh.write(f"{d}\t{'; '.join(dc_map[d])}{note}\n")
                     try:
                         page.screenshot(path=os.path.join(debug_dir, f"{dc}.png"))
                     except Exception:
@@ -303,9 +328,16 @@ def scrape(domains, profile_dir, headless=False, login_timeout_s=300,
                     _log(f"      (wrote {dc}-found.txt + {dc}.png to {debug_dir})")
                 for domain in dc_domains:
                     ips = dc_map.get(domain, [])
-                    error = "" if ips else "not found on page"
+                    expected = dc_counts.get(domain)
+                    error = ""
+                    if not ips:
+                        error = "not found on page"
+                    elif expected and len(ips) < expected:
+                        error = f"captured {len(ips)}/{expected} IPs"
                     results.append(DomainResult(domain, dc, ips=list(ips), error=error))
-                    tag = ", ".join(ips) if ips else "(blank — not on page)"
+                    tag = "; ".join(ips) if ips else "(blank — not on page)"
+                    if error and ips:
+                        tag += f"  [! {error}]"
                     _log(f"    {domain:<42} {tag}")
         finally:
             context.close()
