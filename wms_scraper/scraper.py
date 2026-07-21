@@ -83,6 +83,72 @@ _HARVEST_JS = r"""
 }
 """
 
+# Open the "all public IPs" dialog for a domain by invoking the same global
+# handler the info-icon uses. Works without the row being scrolled into view.
+_OPEN_DIALOG_JS = r"""
+(args) => {
+  const [domain, count] = args;
+  if (typeof showAllPublicIpDetailsForDomain === 'function') {
+    showAllPublicIpDetailsForDomain(domain, count || 1);
+    return true;
+  }
+  return false;
+}
+"""
+
+# The dialog's table is headed "Public IP ... Port Forwarding ..."; find it by
+# that header text rather than a brittle nth-child / div-index path.
+_DIALOG_READY_JS = r"""
+() => {
+  const t = [...document.querySelectorAll('table')].find(
+    (tb) => /Public IP/i.test(tb.textContent) && /Port Forwarding/i.test(tb.textContent));
+  if (!t) return false;
+  return /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(t.textContent);
+}
+"""
+
+# The public IPs are the first-column cells (each a <td rowspan> in a
+# .cluster row). Read those; fall back to the first <td> of every row.
+_DIALOG_IPS_JS = r"""
+() => {
+  const ipRe = /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/g;
+  const t = [...document.querySelectorAll('table')].find(
+    (tb) => /Public IP/i.test(tb.textContent) && /Port Forwarding/i.test(tb.textContent));
+  if (!t) return [];
+  const ips = [];
+  const push = (txt) => (txt.match(ipRe) || []).forEach(
+    (ip) => { if (!ips.includes(ip)) ips.push(ip); });
+  const spanned = t.querySelectorAll('td[rowspan]');
+  if (spanned.length) {
+    spanned.forEach((td) => push(td.textContent));
+  } else {
+    t.querySelectorAll('tr').forEach((tr) => {
+      const td = tr.querySelector('td');
+      if (td) push(td.textContent);
+    });
+  }
+  return ips;
+}
+"""
+
+# Best-effort close of the dialog so the next domain's popup is clean: click a
+# close control if present, else remove the dialog's table container.
+_CLOSE_DIALOG_JS = r"""
+() => {
+  const t = [...document.querySelectorAll('table')].find(
+    (tb) => /Public IP/i.test(tb.textContent) && /Port Forwarding/i.test(tb.textContent));
+  if (!t) return;
+  let root = t;
+  for (let i = 0; i < 8 && root.parentElement && root.parentElement !== document.body; i++) {
+    root = root.parentElement;
+  }
+  const closer = root.querySelector(
+    '.close, .dialogClose, .zdialogClose, [title="Close" i], [aria-label="Close" i]');
+  if (closer) { closer.click(); return; }
+  root.remove();
+}
+"""
+
 # Finds the scrollable container that holds the IP grid (an ancestor of an IP
 # cell whose content overflows) and reports its scroll metrics. Used to decide
 # how many page-steps are needed to walk the whole (possibly virtualised) list.
@@ -196,6 +262,35 @@ def _harvest_dc(page, table_timeout_ms: int):
         page.wait_for_timeout(300)
         _absorb()
     return ips, counts
+
+
+def _dialog_ips(page, domain: str, count, dialog_timeout_ms: int = 8000):
+    """Open a domain's public-IP dialog and return every IP it lists.
+
+    Invokes the page's own ``showAllPublicIpDetailsForDomain`` handler, waits
+    for the dialog table, reads the first (Public IP) column, then closes it.
+    Returns ``[]`` if the dialog never appears (best-effort — the caller keeps
+    the inline IPs in that case).
+    """
+    try:
+        opened = page.evaluate(_OPEN_DIALOG_JS, [domain, count or 1])
+    except Exception:
+        opened = False
+    if not opened:
+        return []
+    try:
+        page.wait_for_function(_DIALOG_READY_JS, timeout=dialog_timeout_ms)
+        found = page.evaluate(_DIALOG_IPS_JS) or []
+    except Exception:
+        found = []
+    finally:
+        try:
+            page.evaluate(_CLOSE_DIALOG_JS)
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(150)
+        except Exception:
+            pass
+    return list(found)
 
 
 def _wait_for_app_shell(page, timeout_ms: int) -> None:
@@ -327,8 +422,17 @@ def scrape(domains, profile_dir, headless=False, login_timeout_s=300,
                         pass
                     _log(f"      (wrote {dc}-found.txt + {dc}.png to {debug_dir})")
                 for domain in dc_domains:
-                    ips = dc_map.get(domain, [])
+                    inline = dc_map.get(domain, [])
                     expected = dc_counts.get(domain)
+                    if not inline and expected is None:
+                        # Domain isn't in this DC's table at all.
+                        results.append(DomainResult(domain, dc, error="not found on page"))
+                        _log(f"    {domain:<42} (blank — not on page)")
+                        continue
+
+                    # The dialog is the authoritative full list of public IPs;
+                    # fall back to the inline IP(s) if it doesn't open.
+                    ips = _dialog_ips(page, domain, expected) or inline
                     error = ""
                     if not ips:
                         error = "not found on page"
