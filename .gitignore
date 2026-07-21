@@ -16,3 +16,7 @@ alerts.log
 report.txt
 # Generated reports at the repo root (keep web templates under web/).
 /report.html
+
+# Build artifacts / exported bundles
+*.bundle
+*.tar.gz
