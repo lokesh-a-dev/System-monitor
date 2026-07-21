@@ -55,16 +55,17 @@ def _write_output(results, fmt: str, output) -> None:
             )
             stream.write("\n")
         elif fmt == "csv":
+            # Simple two-column output: domain, ip. Multiple IPs are joined
+            # with "; "; a domain not on the page gets a blank ip cell.
             writer = csv.writer(stream)
-            writer.writerow(["domain", "dc", "ips", "error"])
+            writer.writerow(["domain", "ip"])
             for r in results:
-                writer.writerow([r.domain, r.dc, " ".join(r.ips), r.error])
+                writer.writerow([r.domain, "; ".join(r.ips)])
         else:  # table
             width = max((len(r.domain) for r in results), default=10)
             for r in results:
                 # Leave the IP column blank when a domain isn't on the page.
-                value = ", ".join(r.ips)
-                stream.write(f"{r.domain:<{width}}  {r.dc:<6}  {value}\n")
+                stream.write(f"{r.domain:<{width}}  {'; '.join(r.ips)}\n")
     finally:
         if output:
             stream.close()
@@ -90,6 +91,10 @@ def main(argv=None) -> int:
                         help="Seconds to wait for each DC's table to render (default 30).")
     parser.add_argument("--slow-mo", type=int, default=0,
                         help="Milliseconds to slow each browser action (debugging).")
+    parser.add_argument("--debug-dir",
+                        help="Write per-DC diagnostics here: <DC>-found.txt (every "
+                             "domain the table contained) + <DC>.png screenshot. "
+                             "Use it to see why a domain came back blank.")
     parser.add_argument("--format", choices=["table", "csv", "json"], default="table",
                         help="Output format (default: table).")
     parser.add_argument("-o", "--output", help="Write output to a file instead of stdout.")
@@ -107,6 +112,7 @@ def main(argv=None) -> int:
         login_timeout_s=args.login_timeout,
         table_timeout_s=args.table_timeout,
         slow_mo_ms=args.slow_mo,
+        debug_dir=args.debug_dir,
     )
     _write_output(results, args.format, args.output)
 
