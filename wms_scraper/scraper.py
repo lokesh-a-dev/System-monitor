@@ -71,9 +71,14 @@ def _log(msg: str) -> None:
 
 
 def _wait_for_domains_table(page, timeout_ms: int) -> None:
-    """Wait until a domain table (something with an IP in it) is rendered."""
+    """Wait until a domain table (something with an IP in it) is rendered.
+
+    Uses ``(document.body || {}).innerText || ""`` so that a null body during
+    login redirects / SPA transitions just polls again instead of aborting
+    the wait with a TypeError.
+    """
     page.wait_for_function(
-        r"""() => /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(document.body.innerText)""",
+        r"""() => /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test((document.body || {}).innerText || "")""",
         timeout=timeout_ms,
     )
 
