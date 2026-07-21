@@ -67,25 +67,29 @@ _HARVEST_JS = r"""
 }
 """
 
-# Locate the scrollable container that holds the IP grid and reset it (and the
-# window) to the top, so incremental scrolling starts from row 0.
-_SCROLL_TOP_JS = r"""
+# Finds the scrollable container that holds the IP grid (an ancestor of an IP
+# cell whose content overflows) and reports its scroll metrics. Used to decide
+# how many page-steps are needed to walk the whole (possibly virtualised) list.
+_SCROLL_METRICS_JS = r"""
 () => {
-  let el = document.querySelector('[onclick*="showAllPublicIpDetailsForDomain"]');
+  let cell = document.querySelector('[onclick*="showAllPublicIpDetailsForDomain"]');
+  let el = cell;
   while (el && el !== document.body) {
-    if (el.scrollHeight > el.clientHeight + 4) { el.scrollTop = 0; break; }
+    if (el.scrollHeight > el.clientHeight + 4) {
+      return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, container: true };
+    }
     el = el.parentElement;
   }
-  window.scrollTo(0, 0);
+  const t = document.scrollingElement || document.body;
+  return { scrollHeight: t.scrollHeight, clientHeight: t.clientHeight, container: false };
 }
 """
 
-# Scroll the IP grid's scroll container down by ~one page. Returns whether the
-# bottom has been reached. Stepping (rather than jumping to the bottom) forces
-# a virtualised grid to render every row's window in turn, so no middle rows
-# are skipped.
-_SCROLL_STEP_JS = r"""
-() => {
+# Scroll the IP grid's container (and the window) to a fraction [0..1] of its
+# scrollable height. Jumping to fixed fractions — rather than looping on a
+# flaky "at bottom?" check — keeps the walk bounded so it can never hang.
+_SCROLL_TO_JS = r"""
+(frac) => {
   let cell = document.querySelector('[onclick*="showAllPublicIpDetailsForDomain"]');
   let container = null, el = cell;
   while (el && el !== document.body) {
@@ -93,11 +97,8 @@ _SCROLL_STEP_JS = r"""
     el = el.parentElement;
   }
   const t = container || document.scrollingElement || document.body;
-  const step = Math.max(120, t.clientHeight * 0.8);
-  const before = t.scrollTop;
-  t.scrollTop = Math.min(t.scrollTop + step, t.scrollHeight);
-  const atBottom = t.scrollTop + t.clientHeight >= t.scrollHeight - 4;
-  return { moved: t.scrollTop - before, atBottom };
+  t.scrollTop = (t.scrollHeight - t.clientHeight) * frac;
+  window.scrollTo(0, (document.body.scrollHeight - window.innerHeight) * frac);
 }
 """
 
@@ -158,22 +159,19 @@ def _harvest_dc(page, table_timeout_ms: int):
                 if ip not in slot:
                     slot.append(ip)
 
-    page.evaluate(_SCROLL_TOP_JS)
-    page.wait_for_timeout(250)
+    # Harvest what's visible at the top, then walk the list in a *bounded*
+    # number of page-sized steps (one screenful of overlap each) so a
+    # virtualised grid renders every row window. Steps are derived from the
+    # container height and hard-capped, so this can never spin.
     _absorb()
-
-    prev_total, stable = -1, 0
-    for _ in range(400):  # cap for very long DC tables
-        info = page.evaluate(_SCROLL_STEP_JS) or {}
-        page.wait_for_timeout(250)
+    metrics = page.evaluate(_SCROLL_METRICS_JS) or {}
+    client_h = metrics.get("clientHeight") or 1
+    scroll_h = metrics.get("scrollHeight") or 1
+    steps = max(1, min(40, int(scroll_h / client_h) + 1))
+    for i in range(1, steps + 1):
+        page.evaluate(_SCROLL_TO_JS, i / steps)
+        page.wait_for_timeout(300)
         _absorb()
-        total = sum(len(v) for v in best.values())
-        stable = stable + 1 if total == prev_total else 0
-        prev_total = total
-        # Stop only once we've reached the bottom and a couple of extra steps
-        # add nothing new (handles slow row rendering near the end).
-        if info.get("atBottom") and stable >= 2:
-            break
     return best
 
 
@@ -299,8 +297,7 @@ def scrape(domains, profile_dir, headless=False, login_timeout_s=300,
                         for d in sorted(dc_map):
                             fh.write(f"{d}\t{'; '.join(dc_map[d])}\n")
                     try:
-                        page.screenshot(path=os.path.join(debug_dir, f"{dc}.png"),
-                                        full_page=True)
+                        page.screenshot(path=os.path.join(debug_dir, f"{dc}.png"))
                     except Exception:
                         pass
                     _log(f"      (wrote {dc}-found.txt + {dc}.png to {debug_dir})")
