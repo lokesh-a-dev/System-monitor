@@ -123,7 +123,8 @@ while IFS= read -r line || [ -n "$line" ]; do
         echo "$ip" >> "$OUTPUT"
         found=$((found + 1))
     else
-        echo "skip"
+        echo "skip -> 0.0.0.0"
+        echo "0.0.0.0" >> "$OUTPUT"
         skipped=$((skipped + 1))
     fi
 
@@ -139,11 +140,6 @@ echo "Skipped           : $skipped"
 echo "Output File       : $OUTPUT"
 echo "============================================="
 
-if [ "$found" -gt 0 ]; then
-    echo
-    echo "Matched IPs (written to $OUTPUT):"
-    cat "$OUTPUT"
-else
-    echo
-    echo "No IPs from '$INPUT' matched the resolved set of '$HOSTNAME'."
-fi
+echo
+echo "Output ($OUTPUT) - matched IPs kept, others replaced with 0.0.0.0:"
+cat "$OUTPUT"
