@@ -62,19 +62,32 @@ python -m wms_scraper.cli --file wms_scraper/domains.txt --format json -o ips.js
 | `--format` | `table` (default), `csv`, or `json`. |
 | `-o, --output` | Write to a file instead of stdout. |
 
-## How it scrapes (DOM-agnostic)
+## How it scrapes
 
-Rather than depending on WMS's exact HTML classes (which can change), for each
-domain the tool finds the on-page text for that domain and climbs to the
-nearest ancestor element that also contains an IPv4 address — i.e. that
-domain's table row — then extracts the IP(s) from just that row. The IP regex
-validates octet ranges, so ports (`9443`) and years aren't mistaken for IPs.
+Each public-IP cell on the WMS page carries the exact domain in its info-icon
+handler:
+
+```html
+<div class="grid-content ..." data-divid="publicDomainsTableTable">
+  <span>136.143.180.151 - TCP/80 -> 80
+    <span class="info-icon"
+          onclick="showAllPublicIpDetailsForDomain('us3-swss.zoho.com',1)"></span>
+  </span>
+</div>
+```
+
+So for each data center the tool loads the table once and harvests a
+`{domain: [IPs]}` map straight from those `onclick` attributes — no fuzzy text
+matching. A domain with several public IPs has several such cells (all naming
+the same domain), and they accumulate into one list. It scrolls the grid to
+materialise lazily-rendered rows, then looks up each requested domain: present
+domains get their IP(s); absent ones are left **blank**. The IP regex validates
+octet ranges, so ports (`9443`) and years aren't mistaken for IPs.
 
 ## Notes & limitations
 
 - Needs a machine where you can see the browser and approve OneAuth (i.e. your
   own laptop, not a headless CI box) at least for the first login.
-- If WMS lazy-loads / paginates a very long domain list, a domain scrolled out
-  of the DOM may report "not found on page". If you hit that, tell me and I'll
-  add a per-domain search/scroll step using the page's search box.
+- The DC (`de=`) for each domain is its leading label, so `-pop`, `-vod` and
+  `-accl` variants (e.g. `us4-swss-pop.zoho.com`) all route to `US4` correctly.
 - The tool only reads the page; it never changes WMS data.

@@ -33,23 +33,48 @@ BASE_URL = "https://zohodcm.com/zservice/wms"
 # JS run in the page to find one domain's IPs without depending on markup.
 # Starts at the text node containing the domain and climbs to the smallest
 # ancestor whose text also contains an IPv4 address (that domain's row).
-_FIND_IPS_JS = r"""
-(domain) => {
+# Harvest a full {domain: [ip, ...]} map for the currently-rendered DC table.
+#
+# The WMS public-IP cells look like:
+#   <div class="grid-content ..." data-divid="publicDomainsTableTable">
+#     <span>136.143.180.151 - TCP/80 -> 80
+#       <span class="info-icon"
+#             onclick="showAllPublicIpDetailsForDomain('us3-swss.zoho.com',1)">
+#       </span>
+#     </span>
+#   </div>
+# The exact domain lives in the info-icon's onclick, so we key off that (no
+# fuzzy text matching) and pull the IP from the enclosing cell's text. A domain
+# with multiple public IPs simply has multiple such cells, all carrying the
+# same domain in their onclick — they accumulate into the list.
+_HARVEST_JS = r"""
+() => {
   const ipRe = /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/g;
-  const needle = domain.toLowerCase();
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  let node, start = null;
-  while ((node = walker.nextNode())) {
-    if (node.textContent.toLowerCase().includes(needle)) { start = node.parentElement; break; }
-  }
-  if (!start) return null;               // domain not present on this page
-  let el = start;
-  while (el && el !== document.body) {
-    const m = el.textContent.match(ipRe);
-    if (m && m.length) return Array.from(new Set(m));
-    el = el.parentElement;
-  }
-  return [];                             // found the domain but no IP near it
+  const domRe = /showAllPublicIpDetailsForDomain\(\s*['"]([^'"]+)['"]/;
+  const map = {};
+  const icons = document.querySelectorAll('[onclick*="showAllPublicIpDetailsForDomain"]');
+  icons.forEach((icon) => {
+    const m = domRe.exec(icon.getAttribute('onclick') || '');
+    if (!m) return;
+    const domain = m[1].trim().toLowerCase();
+    if (!(domain in map)) map[domain] = [];
+    const cell = icon.closest('div') || icon.parentElement;
+    const text = cell ? cell.textContent : '';
+    const ips = text.match(ipRe) || [];
+    for (const ip of ips) if (!map[domain].includes(ip)) map[domain].push(ip);
+  });
+  return map;
+}
+"""
+
+# Scroll every scrollable container (and the window) to the bottom so a
+# virtualised/lazy-rendered grid materialises all its rows before we harvest.
+_SCROLL_JS = r"""
+() => {
+  window.scrollTo(0, document.body.scrollHeight);
+  document.querySelectorAll('*').forEach((el) => {
+    if (el.scrollHeight > el.clientHeight + 4) el.scrollTop = el.scrollHeight;
+  });
 }
 """
 
@@ -71,16 +96,50 @@ def _log(msg: str) -> None:
 
 
 def _wait_for_domains_table(page, timeout_ms: int) -> None:
-    """Wait until a domain table (something with an IP in it) is rendered.
+    """Wait until the public-domains table has rendered its IP cells.
 
-    Uses ``(document.body || {}).innerText || ""`` so that a null body during
-    login redirects / SPA transitions just polls again instead of aborting
-    the wait with a TypeError.
+    Prefers the specific signal (an info-icon whose onclick names a domain);
+    falls back to any IP in the body text. Guards against a null body during
+    login redirects / SPA transitions so it just polls again instead of
+    aborting with a TypeError.
     """
     page.wait_for_function(
-        r"""() => /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test((document.body || {}).innerText || "")""",
+        r"""() => {
+            const b = document.body;
+            if (!b) return false;
+            if (document.querySelector('[onclick*="showAllPublicIpDetailsForDomain"]')) return true;
+            return /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(b.innerText || "");
+        }""",
         timeout=timeout_ms,
     )
+
+
+def _harvest_dc(page, table_timeout_ms: int):
+    """Return a ``{domain: [ip, ...]}`` map for the current DC's table.
+
+    Scrolls to materialise lazily-rendered rows, re-harvesting until the total
+    IP count stops growing (or a scroll cap is hit), so virtualised grids are
+    fully captured.
+    """
+    _wait_for_domains_table(page, timeout_ms=table_timeout_ms)
+    page.wait_for_timeout(400)  # let the initial rows settle
+
+    best = {}
+    prev_total = -1
+    for _ in range(60):  # generous cap for very long DC tables
+        current = page.evaluate(_HARVEST_JS) or {}
+        for domain, ips in current.items():
+            slot = best.setdefault(domain, [])
+            for ip in ips:
+                if ip not in slot:
+                    slot.append(ip)
+        total = sum(len(v) for v in best.values())
+        if total == prev_total:
+            break  # a full scroll pass added nothing new
+        prev_total = total
+        page.evaluate(_SCROLL_JS)
+        page.wait_for_timeout(350)
+    return best
 
 
 def _wait_for_app_shell(page, timeout_ms: int) -> None:
@@ -121,20 +180,18 @@ def _ensure_logged_in(page, login_timeout_s: int) -> None:
     _log("  Login detected — starting scrape.\n")
 
 
-def _load_dc(page, dc: str, timeout_ms: int) -> None:
-    """Render the domains table for a given data center.
+def _load_dc(page, dc: str) -> None:
+    """Navigate to a given data center's domains table.
 
     Forces a *clean* single-fragment hash (Zoho's login redirect can leave a
     doubled ``#domains;de=US3#domains;de=US3`` fragment that renders a blank
     page) and reloads so the SPA re-initialises with the requested ``de``.
+    Waiting for / harvesting the table is done by :func:`_harvest_dc`.
     """
     # Setting location.hash replaces the whole fragment, so any doubled/stale
     # hash is discarded. Reload re-inits the SPA with the clean de value.
     page.evaluate("(dc) => { window.location.hash = 'domains;de=' + dc; }", dc)
     page.reload(wait_until="domcontentloaded")
-    _wait_for_domains_table(page, timeout_ms=timeout_ms)
-    # Small settle for lazy/async row rendering after the first IP appears.
-    page.wait_for_timeout(500)
 
 
 def scrape(domains, profile_dir, headless=False, login_timeout_s=300,
@@ -185,24 +242,20 @@ def scrape(domains, profile_dir, headless=False, login_timeout_s=300,
             for dc, dc_domains in grouped.items():
                 _log(f"[{dc}] loading {len(dc_domains)} domain(s)…")
                 try:
-                    _load_dc(page, dc, timeout_ms=table_timeout_s * 1000)
+                    _load_dc(page, dc)
+                    dc_map = _harvest_dc(page, table_timeout_ms=table_timeout_s * 1000)
                 except Exception as exc:
                     for d in dc_domains:
                         results.append(DomainResult(d, dc, error=f"table load failed: {exc}"))
                     continue
 
+                _log(f"    ({len(dc_map)} domains found in {dc}'s table)")
                 for domain in dc_domains:
-                    try:
-                        ips = page.evaluate(_FIND_IPS_JS, domain)
-                    except Exception as exc:
-                        results.append(DomainResult(domain, dc, error=str(exc)))
-                        continue
-                    if ips is None:
-                        results.append(DomainResult(domain, dc, error="not found on page"))
-                    else:
-                        results.append(DomainResult(domain, dc, ips=list(ips)))
-                    tag = ", ".join(results[-1].ips) or f"! {results[-1].error}"
-                    _log(f"    {domain:<40} {tag}")
+                    ips = dc_map.get(domain, [])
+                    error = "" if ips else "not found on page"
+                    results.append(DomainResult(domain, dc, ips=list(ips), error=error))
+                    tag = ", ".join(ips) if ips else "(blank — not on page)"
+                    _log(f"    {domain:<42} {tag}")
         finally:
             context.close()
 

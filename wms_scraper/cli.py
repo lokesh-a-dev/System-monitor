@@ -62,7 +62,8 @@ def _write_output(results, fmt: str, output) -> None:
         else:  # table
             width = max((len(r.domain) for r in results), default=10)
             for r in results:
-                value = ", ".join(r.ips) if r.ips else f"(!) {r.error or 'no IP found'}"
+                # Leave the IP column blank when a domain isn't on the page.
+                value = ", ".join(r.ips)
                 stream.write(f"{r.domain:<{width}}  {r.dc:<6}  {value}\n")
     finally:
         if output:
