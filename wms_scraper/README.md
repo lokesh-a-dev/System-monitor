@@ -45,6 +45,29 @@ python -m wms_scraper.cli us4-swss.zoho.com in2-swss.zoho.in \
 python -m wms_scraper.cli --file wms_scraper/domains.txt --format json -o ips.json
 ```
 
+## Verifying scraped IPs against DNS
+
+`verify.py` takes the scraper's `domain,ip` CSV and adds a **`verified`**
+column — the equivalent of `nslookup <host> | grep <ip>`. A row is marked
+`verified` when its scraped IP(s) appear in the DNS answer, blank otherwise.
+
+```bash
+# Default: match every IP against wss-interdc.zoho.com's DNS records
+python -m wms_scraper.verify ips.csv -o ips-verified.csv
+
+# Override the host to resolve/match against
+python -m wms_scraper.verify ips.csv --host wss-interdc.zoho.com -o out.csv
+
+# Instead, resolve each row's OWN domain and check its scraped IP matches
+python -m wms_scraper.verify ips.csv --per-domain -o out.csv
+
+# Use the nslookup binary instead of the system resolver
+python -m wms_scraper.verify ips.csv --nslookup -o out.csv
+```
+
+Output columns: `domain,ip,verified`. For a multi-IP row, `verified` is set
+only when **all** of its IPs are present in the DNS answer.
+
 `domains.txt` is one domain per line; blank lines, `#` comments and a leading
 `Domains` header line are ignored (so you can paste the list straight from WMS).
 
