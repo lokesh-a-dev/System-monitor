@@ -83,14 +83,31 @@ def _wait_for_domains_table(page, timeout_ms: int) -> None:
     )
 
 
+def _wait_for_app_shell(page, timeout_ms: int) -> None:
+    """Wait until the WMS app shell (its nav) is loaded on the zohodcm host.
+
+    This is the login-complete signal — it does NOT require the domains table,
+    which may be blank until we navigate to a clean ``de`` hash. We key off the
+    WMS-only nav labels ("Firewall Outgoing Rules" / "Provisioning").
+    """
+    page.wait_for_function(
+        r"""() => location.hostname.indexOf('zohodcm.com') !== -1
+                 && !!document.body
+                 && /Firewall Outgoing Rules|Provisioning/.test(document.body.innerText)""",
+        timeout=timeout_ms,
+    )
+
+
 def _ensure_logged_in(page, login_timeout_s: int) -> None:
     """Load the WMS page and block until the operator has finished login.
 
-    We consider login complete once the domains table (with IPs) renders.
+    Login is complete once the WMS app shell is present (see
+    :func:`_wait_for_app_shell`) — not once the table renders, because the
+    table can be blank until we set a clean ``de`` hash.
     """
     page.goto(BASE_URL + "#domains;de=US3", wait_until="domcontentloaded")
     try:
-        _wait_for_domains_table(page, timeout_ms=5000)
+        _wait_for_app_shell(page, timeout_ms=8000)
         return  # already authenticated (persistent session)
     except Exception:
         pass
@@ -98,21 +115,23 @@ def _ensure_logged_in(page, login_timeout_s: int) -> None:
     _log("\n" + "=" * 70)
     _log("  Please log in to Zoho in the browser window that just opened.")
     _log("  Complete the OneAuth / TOTP prompt. Waiting for the WMS")
-    _log("  Domains page to appear (up to %d s)…" % login_timeout_s)
+    _log("  console to load (up to %d s)…" % login_timeout_s)
     _log("=" * 70 + "\n")
-    _wait_for_domains_table(page, timeout_ms=login_timeout_s * 1000)
+    _wait_for_app_shell(page, timeout_ms=login_timeout_s * 1000)
     _log("  Login detected — starting scrape.\n")
 
 
 def _load_dc(page, dc: str, timeout_ms: int) -> None:
-    """Render the domains table for a given data center."""
-    target_hash = f"domains;de={dc}"
-    if page.url.split("#")[0].rstrip("/") != BASE_URL:
-        page.goto(f"{BASE_URL}#{target_hash}", wait_until="domcontentloaded")
-    else:
-        # Hash-only change won't reload an SPA — set it, then force reload.
-        page.evaluate(f"window.location.hash = {target_hash!r}")
-        page.reload(wait_until="domcontentloaded")
+    """Render the domains table for a given data center.
+
+    Forces a *clean* single-fragment hash (Zoho's login redirect can leave a
+    doubled ``#domains;de=US3#domains;de=US3`` fragment that renders a blank
+    page) and reloads so the SPA re-initialises with the requested ``de``.
+    """
+    # Setting location.hash replaces the whole fragment, so any doubled/stale
+    # hash is discarded. Reload re-inits the SPA with the clean de value.
+    page.evaluate("(dc) => { window.location.hash = 'domains;de=' + dc; }", dc)
+    page.reload(wait_until="domcontentloaded")
     _wait_for_domains_table(page, timeout_ms=timeout_ms)
     # Small settle for lazy/async row rendering after the first IP appears.
     page.wait_for_timeout(500)
